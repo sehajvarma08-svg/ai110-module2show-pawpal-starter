@@ -1,8 +1,8 @@
 #The Logic layer where all the backend classes live
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta
+from dataclasses import dataclass, field, replace
+from datetime import date, datetime, time, timedelta
 from enum import Enum, IntEnum
 from typing import List, Optional, Tuple
 from uuid import uuid4
@@ -46,12 +46,35 @@ class Task:
         """Return when this task finishes (due_time + duration)."""
         return self.due_time + timedelta(minutes=self.duration_minutes)
 
+    @property
+    def is_must_do(self) -> bool:
+        """Return True for tasks that should never be dropped (medication, vet)."""
+        # CHANGE (#3): health-critical tasks bypass the daily time budget.
+        return self.task_type in (TaskType.MEDICATION, TaskType.VET)
+
+    def occurs_on(self, day: date) -> bool:
+        """Return True if this task falls on `day`, counting recurrence."""
+        # CHANGE (#6): recurring tasks now show up on future days, not just
+        # on their original due date.
+        start = self.due_time.date()
+        if day < start:
+            return False
+        if self.recurrence == Recurrence.DAILY:
+            return True
+        if self.recurrence == Recurrence.WEEKLY:
+            return (day - start).days % 7 == 0
+        return day == start
+
     def overlaps(self, other: Task) -> bool:
         """Return True if this task's time window overlaps another's."""
         return self.due_time < other.end_time and other.due_time < self.end_time
 
     def mark_complete(self) -> Optional[Task]:
         """Mark complete and return the next occurrence if recurring, else None."""
+        # CHANGE (#7): calling this twice used to spawn two copies of the next
+        # occurrence; now a second call is a no-op.
+        if self.completed:
+            return None
         self.completed = True
         if self.recurrence == Recurrence.DAILY:
             step = timedelta(days=1)
@@ -136,6 +159,8 @@ class Owner:
 class SkippedTask:
     task: Task
     reason: str
+    # CHANGE (#1): when a task was skipped for overlapping, suggest a free slot.
+    suggested_time: Optional[datetime] = None
 
 
 @dataclass
@@ -144,6 +169,8 @@ class DailyPlan:
     scheduled: List[Task] = field(default_factory=list)
     skipped: List[SkippedTask] = field(default_factory=list)
     total_minutes: int = 0
+    # CHANGE (#3): True when must-do tasks pushed the plan past the budget.
+    over_budget: bool = False
 
 
 class Scheduler:
@@ -158,18 +185,36 @@ class Scheduler:
         budget = self.owner.available_minutes_per_day
         plan = DailyPlan(day=day)
 
-        todays = [
-            t for t in self.owner.get_all_tasks()
-            if not t.completed and t.due_time.date() == day
-        ]
-        for task in self.sort_by_priority(todays):
-            if plan.total_minutes + task.duration_minutes > budget:
+        # CHANGE (#6): use occurs_on() so recurring tasks appear on future days.
+        # A recurring task from an earlier date is shown as a copy moved onto
+        # `day` (same id, same pet) so overlap checks use the right clock time.
+        todays = []
+        for t in self.owner.get_all_tasks():
+            if t.completed or not t.occurs_on(day):
+                continue
+            if t.due_time.date() != day:
+                t = replace(t, due_time=datetime.combine(day, t.due_time.time()))
+            todays.append(t)
+
+        # CHANGE (#3): must-do tasks (medication, vet) are scheduled first.
+        ordered = sorted(
+            todays, key=lambda t: (not t.is_must_do, -t.priority, t.due_time)
+        )
+        for task in ordered:
+            over = plan.total_minutes + task.duration_minutes > budget
+            if over and not task.is_must_do:
                 plan.skipped.append(SkippedTask(task, "not enough time left in the day"))
                 continue
             clash = next((t for t in plan.scheduled if task.overlaps(t)), None)
             if clash is not None:
-                plan.skipped.append(SkippedTask(task, f"overlaps with '{clash.title}'"))
+                # CHANGE (#1): offer the next free slot instead of just dropping it.
+                slot = None if over else self.find_next_free_slot(task, plan.scheduled)
+                plan.skipped.append(
+                    SkippedTask(task, f"overlaps with '{clash.title}'", slot)
+                )
                 continue
+            if over:
+                plan.over_budget = True
             plan.scheduled.append(task)
             plan.total_minutes += task.duration_minutes
 
@@ -177,11 +222,47 @@ class Scheduler:
         self.last_plan = plan
         return plan
 
+    def find_next_free_slot(
+        self, task: Task, scheduled: List[Task]
+    ) -> Optional[datetime]:
+        """Return the earliest start at/after task.due_time that fits, or None."""
+        # CHANGE (#1): walk the scheduled tasks in time order, pushing the
+        # candidate start past any task it would collide with.
+        candidate = task.due_time
+        length = timedelta(minutes=task.duration_minutes)
+        for t in self.sort_by_time(scheduled):
+            if candidate + length <= t.due_time:
+                break  # fits in the gap before t
+            if t.end_time > candidate:
+                candidate = t.end_time
+        midnight = datetime.combine(candidate.date() + timedelta(days=1), time.min)
+        return candidate if candidate + length <= midnight else None
+
     def sort_by_time(self, tasks: Optional[List[Task]] = None) -> List[Task]:
-        """Return tasks sorted by due time."""
+        """Return tasks sorted by due time, ties broken by priority (highest first)."""
         if tasks is None:
             tasks = self.owner.get_all_tasks()
-        return sorted(tasks, key=lambda t: t.due_time)
+        # CHANGE: tasks with the same due_time are ordered by priority so the
+        # result is predictable instead of depending on insertion order.
+        return sorted(tasks, key=lambda t: (t.due_time, -t.priority))
+
+    def filter_tasks(
+        self,
+        completed: Optional[bool] = None,
+        pet_name: Optional[str] = None,
+        tasks: Optional[List[Task]] = None,
+    ) -> List[Task]:
+        """Return tasks matching completion status and/or pet name (None = any)."""
+        # CHANGE: new filter; pet names match case-insensitively, and both
+        # filters can be combined.
+        if tasks is None:
+            tasks = self.owner.get_all_tasks()
+        wanted = pet_name.strip().lower() if pet_name is not None else None
+        return [
+            t for t in tasks
+            if (completed is None or t.completed == completed)
+            and (wanted is None or (t.pet is not None and t.pet.name.lower() == wanted))
+        ]
 
     def sort_by_priority(self, tasks: Optional[List[Task]] = None) -> List[Task]:
         """Return tasks sorted by priority (highest first), ties by time."""
@@ -224,6 +305,8 @@ class Scheduler:
             f"Plan for {plan.day:%A, %b %d}: {plan.total_minutes} of "
             f"{budget} available minutes used."
         ]
+        if plan.over_budget:
+            lines.append("Note: medication/vet tasks exceed your available time.")
         if plan.scheduled:
             lines.append("Scheduled (highest priority first got the time):")
             for t in plan.scheduled:
@@ -236,5 +319,6 @@ class Scheduler:
         if plan.skipped:
             lines.append("Skipped:")
             for s in plan.skipped:
-                lines.append(f"  {label(s.task)} - {s.reason}")
+                hint = f" (free at {s.suggested_time:%H:%M})" if s.suggested_time else ""
+                lines.append(f"  {label(s.task)} - {s.reason}{hint}")
         return "\n".join(lines)

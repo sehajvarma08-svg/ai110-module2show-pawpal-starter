@@ -154,5 +154,9 @@ st.subheader("Build Schedule")
 plan_day = st.date_input("Plan for day", key="plan_day")
 
 if st.button("Generate schedule"):
-    plan = scheduler.build_daily_plan(plan_day)
-    st.text(scheduler.explain_plan(plan))
+    # CHANGE (#15): keep the plan in session state so it survives reruns
+    # (e.g. adding a task) instead of vanishing after the button click.
+    st.session_state.plan = scheduler.build_daily_plan(plan_day)
+
+if "plan" in st.session_state:
+    st.text(scheduler.explain_plan(st.session_state.plan))

@@ -54,6 +54,18 @@ Paste a sample of your app's CLI or Streamlit output here so a reader can see wh
 #   ...
 ```
 
+Sample Output: 
+Plan for Sunday, Oct 18: 85 of 120 available minutes used.
+Scheduled (highest priority first got the time):
+  08:00-08:30  Morning walk (Mochi) [high priority]
+  12:30-12:40  Medication (Kit) [medium priority]
+  16:00-16:45  Grooming (Mochi) [low priority]
+Skipped:
+  Breakfast (Kit) - overlaps with 'Morning walk'
+
+Heads up - overlapping tasks:
+  Morning walk (Mochi) overlaps Breakfast (Kit)
+
 ## 🧪 Testing PawPal+
 
 ```bash
@@ -65,10 +77,39 @@ pytest --cov
 ```
 
 Sample test output:
+========================================
+Today's Schedule for Sam
+========================================
+Plan for Sunday, Oct 18: 85 of 120 available minutes used.
+Scheduled (highest priority first got the time):
+  08:00-08:30  Morning walk (Mochi) [high priority]
+  12:30-12:40  Medication (Kit) [medium priority]
+  16:00-16:45  Grooming (Mochi) [low priority]
+Skipped:
+  Breakfast (Kit) - overlaps with 'Morning walk'
+
+Heads up - overlapping tasks:
+  Morning walk (Mochi) overlaps Breakfast (Kit)
 
 ```
 # Paste your pytest output here
 ```
+Requirement already satisfied: pytest in ./.venv/lib/python3.13/site-packages (9.1.1)
+Requirement already satisfied: iniconfig>=1.0.1 in ./.venv/lib/python3.13/site-packages (from pytest) (2.3.1)
+Requirement already satisfied: packaging>=22 in ./.venv/lib/python3.13/site-packages (from pytest) (26.3)
+Requirement already satisfied: pluggy<2,>=1.5 in ./.venv/lib/python3.13/site-packages (from pytest) (1.7.0)
+Requirement already satisfied: pygments>=2.7.2 in ./.venv/lib/python3.13/site-packages (from pytest) (2.21.0)
+(.venv) sehajvarma@Mac ai110-module2show-pawpal-starter % python -m pytest
+============================================================ test session starts =============================================================
+platform darwin -- Python 3.13.7, pytest-9.1.1, pluggy-1.7.0
+rootdir: /Users/sehajvarma/Desktop/ai110-module2show-pawpal-starter
+plugins: anyio-4.15.1
+collected 2 items                                                                                                                            
+
+test/test_pawpal.py ..                                                                                                                 [100%]
+
+============================================================= 2 passed in 0.01s ==============================================================
+(.venv) sehajvarma@Mac ai110-module2show-pawpal-starter % 
 
 ## 📐 Smarter Scheduling
 
@@ -85,10 +126,17 @@ Sample test output:
 
 Describe your app in numbered steps so a reader can follow along without watching a video:
 
-1. <!-- Describe this step -->
-2. <!-- Describe this step -->
-3. <!-- Describe this step -->
-4. <!-- Describe this step -->
-5. <!-- Add more steps as needed -->
+The walkthrough follows the CLI demo in `main.py` (run it with `python main.py`).
+
+1. **Create an owner.** Sam is set up with 120 available minutes per day.
+2. **Add pets.** Two pets, Mochi (dog) and Kit (cat), are attached to the owner.
+3. **Add tasks to each pet.** Each task has a type, start time, duration, priority, and optional daily/weekly recurrence:
+   - Mochi: Morning walk (08:00, 30 min, high, daily) and Grooming (16:00, 45 min, low)
+   - Kit: Breakfast (08:15, 15 min, high, daily) and Medication (12:30, 10 min, medium)
+4. **Build the daily plan.** The `Scheduler` takes today's incomplete tasks, sorts them by priority (ties broken by time), and adds them one at a time. A task is skipped if it would exceed the time budget or overlap a task already scheduled.
+5. **Read the explanation.** The plan lists each scheduled task with its time window, pet, and priority, then lists skipped tasks with the reason. Here, Breakfast is skipped because it overlaps the Morning walk.
+6. **Check for conflicts.** The scheduler also reports every pair of overlapping tasks across all pets, so the owner can reschedule them.
+7. **Complete a task.** Calling `mark_complete()` marks the task done. For a recurring task, it also adds the next occurrence to the pet.
+8. **Verify with tests.** Run `python -m pytest` to check that completing a task changes its status and that adding a task increases the pet's task count.
 
 **Screenshot or video** *(optional)*: <!-- Insert a screenshot or link to a demo video here -->

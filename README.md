@@ -113,14 +113,13 @@ test/test_pawpal.py ..                                                          
 
 ## 📐 Smarter Scheduling
 
-> Fill in once you've implemented scheduling logic.
-
 | Feature | Method(s) | Notes |
 |---------|-----------|-------|
-| Task sorting | | e.g., by priority, duration |
-| Filtering | | e.g., skip tasks if time runs out |
-| Conflict handling | | e.g., overlapping time slots |
-| Recurring tasks | | e.g., daily vs. weekly |
+| Task sorting | `Scheduler.sort_by_time`, `Scheduler.sort_by_priority` | By due time (ties broken by highest priority) or by priority (ties broken by time). Both return a new list. |
+| Filtering | `Scheduler.filter_tasks`, `Scheduler.get_upcoming_tasks` | Filter by completion status and/or pet name (case-insensitive, combined with AND); upcoming returns incomplete tasks due after now. |
+| Daily planning | `Scheduler.build_daily_plan` | Greedy: must-do tasks (medication, vet) first, then priority, then time. Tasks that exceed the daily time budget are skipped with a reason; must-do tasks bypass the budget and flag `over_budget`. |
+| Conflict handling | `Task.overlaps`, `Scheduler.detect_conflicts`, `Scheduler.find_next_free_slot` | Overlapping tasks are detected with a single sweep over time-sorted tasks. In the daily plan, a clashing task is skipped and given a suggested next free slot (or none if it would run past midnight). |
+| Recurring tasks | `Task.occurs_on`, `Task.mark_complete` | Daily and weekly recurrence are projected onto future days when planning. Completing a recurring task creates the next occurrence (never in the past); completing twice is a no-op. |
 
 ## 📸 Demo Walkthrough
 

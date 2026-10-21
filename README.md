@@ -111,6 +111,18 @@ test/test_pawpal.py ..                                                          
 ============================================================= 2 passed in 0.01s ==============================================================
 (.venv) sehajvarma@Mac ai110-module2show-pawpal-starter % 
 
+2nd time with more added test: 
+======================================== test session starts =========================================
+platform darwin -- Python 3.13.7, pytest-9.1.1, pluggy-1.7.0
+rootdir: /Users/sehajvarma/Desktop/ai110-module2show-pawpal-starter
+plugins: anyio-4.15.1
+collected 9 items                                                                                    
+
+test/test_pawpal.py .........                                                                  [100%]
+
+========================================= 9 passed in 0.01s ==========================================
+(.venv) sehajvarma@Mac ai110-module2show-pawpal-starter % 
+
 ## 📐 Smarter Scheduling
 
 | Feature | Method(s) | Notes |

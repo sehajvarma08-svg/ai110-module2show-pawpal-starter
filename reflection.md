@@ -117,12 +117,13 @@ I mainly verfied what the AI was doing with the instructions that were given to 
 **a. What you tested**
 
 - What behaviors did you test?
+I tested the core task and pet behaviors (completing tasks, adding tasks to pets), the recurring-task logic (daily and weekly repeats, no duplicate occurrences on repeated completion, correct next dates after late completion, and completing projected copies), and the scheduler's conflict handling (suggesting free slots when tasks overlap, and letting medication bypass the time budget). These were important because recurrence and conflict detection are where the scheduler is most likely to go wrong silently. A duplicated or mis-dated task, or a double-booked slot, would break the plan without raising any error.
 - Why were these tests important?
-
+These tests were important because the scheduler's riskiest failures are silent ones. A duplicated or mis-dated recurring task, a double-booked slot, or a medication dropped for time would all produce a plausible-looking schedule that is wrong, so nothing would signal the bug. Automated tests let me check those cases every time I changed the code, instead of relying on reading the output by eye. The basic completion and add-task tests gave me a reliable foundation for the more complex scheduling logic.
 **b. Confidence**
 
-- How confident are you that your scheduler works correctly?
-- What edge cases would you test next if you had more time?
+- How confident are you that your scheduler works correctly? 4
+- What edge cases would you test next if you had more time? If I had more time, I would test the boundaries and empty cases the current tests skip. These include back-to-back tasks that touch but don't overlap, a fully booked day with no free slot, tasks that cross midnight, and recurrence across month boundaries. I would also test conflicts across multiple pets, empty pets and schedules, and invalid input such as zero-length durations.
 
 ---
 

@@ -133,10 +133,16 @@ These tests were important because the scheduler's riskiest failures are silent 
 
 - What part of this project are you most satisfied with?
 
+I'm most satisfied with the scheduler. It puts priority first, handles recurring tasks, suggests free slots when tasks overlap, and explains why a task was skipped. The automated tests also gave me confidence that it works.
+
 **b. What you would improve**
 
 - If you had another iteration, what would you improve or redesign?
 
+I would make the scheduler smarter by moving skipped tasks to another time instead of dropping them. I would also add the edge-case tests I listed above and improve the UI.
+
 **c. Key takeaway**
 
 - What is one important thing you learned about designing systems or working with AI on this project?
+
+AI is a fast helper, but I still have to be the architect. A clear design up front and checking the AI's output against it (like when it gave me 5 classes instead of 4) kept the project on track.

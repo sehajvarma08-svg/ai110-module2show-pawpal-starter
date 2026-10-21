@@ -40,6 +40,9 @@ class Task:
     completed: bool = False
     id: str = field(default_factory=lambda: uuid4().hex)
     pet: Optional[Pet] = field(default=None, repr=False, compare=False)
+    # For a projected copy of a recurring task (see Scheduler.build_daily_plan):
+    # the stored task it was copied from, so completing the copy completes it.
+    source: Optional[Task] = field(default=None, repr=False, compare=False)
 
     @property
     def end_time(self) -> datetime:
@@ -69,29 +72,38 @@ class Task:
         """Return True if this task's time window overlaps another's."""
         return self.due_time < other.end_time and other.due_time < self.end_time
 
-    def mark_complete(self) -> Optional[Task]:
+    def mark_complete(self, now: Optional[datetime] = None) -> Optional[Task]:
         """Mark complete and return the next occurrence if recurring, else None."""
         # CHANGE (#7): calling this twice used to spawn two copies of the next
         # occurrence; now a second call is a no-op.
-        if self.completed:
+        # CHANGE (#8): a projected copy completes the stored task it came from,
+        # and the next occurrence is never scheduled in the past.
+        original = self.source or self
+        if self.completed or original.completed:
             return None
         self.completed = True
+        original.completed = True
         if self.recurrence == Recurrence.DAILY:
             step = timedelta(days=1)
         elif self.recurrence == Recurrence.WEEKLY:
             step = timedelta(weeks=1)
         else:
             return None
+        now = now or datetime.now()
+        next_due = self.due_time + step
+        while next_due <= now:
+            next_due += step
         next_task = Task(
             title=self.title,
             task_type=self.task_type,
-            due_time=self.due_time + step,
+            due_time=next_due,
             duration_minutes=self.duration_minutes,
             priority=self.priority,
             recurrence=self.recurrence,
         )
-        if self.pet is not None:
-            self.pet.add_task(next_task)
+        pet = original.pet or self.pet
+        if pet is not None:
+            pet.add_task(next_task)
         return next_task
 
     def reschedule(self, new_time: datetime) -> None:
@@ -180,7 +192,22 @@ class Scheduler:
         self.last_plan: Optional[DailyPlan] = None
 
     def build_daily_plan(self, day: Optional[date] = None) -> DailyPlan:
-        """Build a day's plan by priority within the time budget, skipping conflicts."""
+        """Build a day's plan by priority within the time budget, skipping conflicts.
+
+        Algorithm: collect incomplete tasks that occur on `day` (recurring
+        tasks are projected onto `day`), order them must-do first, then by
+        priority (high to low), then by due time, and greedily accept each
+        one. A task is skipped if it would exceed the daily budget (must-do
+        tasks are exempt and set `over_budget`) or overlaps an already
+        accepted task; overlap skips get a suggested free slot.
+
+        Args:
+            day: The day to plan; defaults to today.
+
+        Returns:
+            A DailyPlan with scheduled tasks sorted by time and the skipped
+            tasks with reasons. Also stored in `self.last_plan`.
+        """
         day = day or date.today()
         budget = self.owner.available_minutes_per_day
         plan = DailyPlan(day=day)
@@ -193,7 +220,11 @@ class Scheduler:
             if t.completed or not t.occurs_on(day):
                 continue
             if t.due_time.date() != day:
-                t = replace(t, due_time=datetime.combine(day, t.due_time.time()))
+                t = replace(
+                    t,
+                    due_time=datetime.combine(day, t.due_time.time()),
+                    source=t,
+                )
             todays.append(t)
 
         # CHANGE (#3): must-do tasks (medication, vet) are scheduled first.
@@ -225,7 +256,20 @@ class Scheduler:
     def find_next_free_slot(
         self, task: Task, scheduled: List[Task]
     ) -> Optional[datetime]:
-        """Return the earliest start at/after task.due_time that fits, or None."""
+        """Return the earliest start at/after task.due_time that fits, or None.
+
+        Algorithm: walk `scheduled` in time order with a candidate start
+        beginning at task.due_time. If the task fits entirely before the
+        next scheduled task, stop; otherwise, if that task ends after the
+        candidate, push the candidate to its end time.
+
+        Args:
+            task: The task needing a slot (its duration is used).
+            scheduled: Tasks already occupying time.
+
+        Returns:
+            The candidate start, or None if the task would run past midnight.
+        """
         # CHANGE (#1): walk the scheduled tasks in time order, pushing the
         # candidate start past any task it would collide with.
         candidate = task.due_time
@@ -239,7 +283,14 @@ class Scheduler:
         return candidate if candidate + length <= midnight else None
 
     def sort_by_time(self, tasks: Optional[List[Task]] = None) -> List[Task]:
-        """Return tasks sorted by due time, ties broken by priority (highest first)."""
+        """Return tasks sorted by due time, ties broken by priority (highest first).
+
+        Args:
+            tasks: Tasks to sort; defaults to all of the owner's tasks.
+
+        Returns:
+            A new sorted list; the input is not modified.
+        """
         if tasks is None:
             tasks = self.owner.get_all_tasks()
         # CHANGE: tasks with the same due_time are ordered by priority so the
@@ -252,7 +303,17 @@ class Scheduler:
         pet_name: Optional[str] = None,
         tasks: Optional[List[Task]] = None,
     ) -> List[Task]:
-        """Return tasks matching completion status and/or pet name (None = any)."""
+        """Return tasks matching completion status and/or pet name (None = any).
+
+        Both filters are combined with AND. Pet names are compared
+        case-insensitively and ignore surrounding whitespace; tasks with no
+        pet never match a pet_name filter.
+
+        Args:
+            completed: True for done tasks, False for open ones, None for both.
+            pet_name: Pet name to match, or None for any pet.
+            tasks: Tasks to filter; defaults to all of the owner's tasks.
+        """
         # CHANGE: new filter; pet names match case-insensitively, and both
         # filters can be combined.
         if tasks is None:
@@ -271,7 +332,21 @@ class Scheduler:
         return sorted(tasks, key=lambda t: (-t.priority, t.due_time))
 
     def detect_conflicts(self, tasks: Optional[List[Task]] = None) -> List[Tuple[Task, Task]]:
-        """Return pairs of tasks whose time windows overlap."""
+        """Return pairs of tasks whose time windows overlap.
+
+        Algorithm: sort by time, then sweep once while tracking the task
+        that ends latest so far. Each task that starts before that task
+        ends is reported as a conflict with it. Completed tasks are not
+        excluded, and a task is only paired with the latest-ending earlier
+        task, so a long task overlapping several others pairs with each
+        later task but not every pair is listed.
+
+        Args:
+            tasks: Tasks to check; defaults to all of the owner's tasks.
+
+        Returns:
+            (earlier_task, later_task) tuples in time order.
+        """
         ordered = self.sort_by_time(tasks)
         conflicts: List[Tuple[Task, Task]] = []
         # Track the task that ends latest so far; any later task that starts

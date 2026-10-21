@@ -1,15 +1,106 @@
 classDiagram
-    %% Replace the placeholders below with your actual classes, attributes, methods, and relationships.
-    %% Keep this file updated so it matches your final implementation.
-
-    class ClassName {
-        +type attribute
-        +method() returnType
+    class Priority {
+        <<enumeration>>
+        LOW = 1
+        MEDIUM = 2
+        HIGH = 3
     }
 
-    class AnotherClass {
-        +type attribute
-        +method() returnType
+    class Recurrence {
+        <<enumeration>>
+        NONE
+        DAILY
+        WEEKLY
     }
 
-    ClassName --> AnotherClass : relationship
+    class TaskType {
+        <<enumeration>>
+        FEEDING
+        WALK
+        MEDICATION
+        GROOMING
+        VET
+        OTHER
+    }
+
+    class Owner {
+        +str name
+        +str email
+        +int available_minutes_per_day
+        +List~Pet~ pets
+        +add_pet(pet) void
+        +remove_pet(pet) void
+        +get_all_tasks() List~Task~
+    }
+
+    class Pet {
+        +str name
+        +str species
+        +int age
+        +str notes
+        +List~Task~ tasks
+        +Owner owner
+        +add_task(task) void
+        +remove_task(task) void
+        +get_tasks() List~Task~
+    }
+
+    class Task {
+        +str id
+        +str title
+        +TaskType task_type
+        +datetime due_time
+        +int duration_minutes
+        +Priority priority
+        +Recurrence recurrence
+        +bool completed
+        +Pet pet
+        +Task source
+        +end_time() datetime
+        +is_must_do() bool
+        +occurs_on(day) bool
+        +overlaps(other) bool
+        +mark_complete(now) Task
+        +reschedule(new_time) void
+    }
+
+    class SkippedTask {
+        +Task task
+        +str reason
+        +datetime suggested_time
+    }
+
+    class DailyPlan {
+        +date day
+        +List~Task~ scheduled
+        +List~SkippedTask~ skipped
+        +int total_minutes
+        +bool over_budget
+    }
+
+    class Scheduler {
+        +Owner owner
+        +DailyPlan last_plan
+        +build_daily_plan(day) DailyPlan
+        +find_next_free_slot(task, scheduled) datetime
+        +sort_by_time(tasks) List~Task~
+        +filter_tasks(completed, pet_name, tasks) List~Task~
+        +sort_by_priority(tasks) List~Task~
+        +detect_conflicts(tasks) List~Tuple~Task, Task~~
+        +get_upcoming_tasks(now) List~Task~
+        +explain_plan(plan) str
+    }
+
+    Owner "1" -- "*" Pet : owns
+    Pet "1" -- "*" Task : has
+    Task "0..1" --> "0..1" Task : source (projected copy of)
+    Task ..> Task : mark_complete creates next occurrence
+    Task --> Priority
+    Task --> Recurrence
+    Task --> TaskType
+    Scheduler "1" --> "1" Owner : schedules for
+    Scheduler "1" --> "0..1" DailyPlan : last_plan
+    DailyPlan "1" --> "*" SkippedTask : skipped
+    SkippedTask --> Task
+    Scheduler ..> DailyPlan : builds
+    Scheduler ..> Task : organizes

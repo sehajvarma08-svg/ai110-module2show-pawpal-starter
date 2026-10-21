@@ -39,6 +39,10 @@ def main() -> None:
     # (Daily recurrence also adds tomorrow's walk, which won't be in today's plan.)
     mochi.tasks[-1].mark_complete()
 
+    # Two tasks at exactly the same time (different pets) to trigger a conflict warning.
+    mochi.add_task(Task("Vet checkup", TaskType.VET, at(14, 0), 30, Priority.HIGH))
+    kit.add_task(Task("Nail trim", TaskType.GROOMING, at(14, 0), 20, Priority.MEDIUM))
+
     scheduler = Scheduler(owner)
     plan = scheduler.build_daily_plan()
 
@@ -52,7 +56,8 @@ def main() -> None:
     if conflicts:
         print("\nHeads up - overlapping tasks:")
         for a, b in conflicts:
-            print(f"  {a.title} ({a.pet.name}) overlaps {b.title} ({b.pet.name})")
+            print(f"  WARNING: {a.title} ({a.pet.name}, {a.due_time:%H:%M}-{a.end_time:%H:%M}) "
+                  f"overlaps {b.title} ({b.pet.name}, {b.due_time:%H:%M}-{b.end_time:%H:%M})")
 
     def show(title: str, tasks) -> None:
         print(f"\n{title}")

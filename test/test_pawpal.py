@@ -82,3 +82,33 @@ def test_medication_ignores_time_budget():
     plan = sched.build_daily_plan()
     assert [t.title for t in plan.scheduled] == ["Pill"]
     assert plan.over_budget
+
+
+def test_completing_projected_copy_completes_original_once():
+    owner, pet, sched = _setup()
+    start = datetime.combine(date.today(), datetime.min.time()).replace(hour=8)
+    original = Task("Walk", TaskType.WALK, start, 30, recurrence=Recurrence.DAILY)
+    pet.add_task(original)
+    day = date.today() + timedelta(days=2)
+    copy = sched.build_daily_plan(day).scheduled[0]
+    nxt = copy.mark_complete()
+    assert original.completed
+    assert nxt.due_time == datetime.combine(day + timedelta(days=1), start.time())
+    plan = sched.build_daily_plan(day + timedelta(days=1))
+    assert len(plan.scheduled) == 1 and not plan.skipped
+
+
+def test_late_completion_schedules_next_occurrence_in_future():
+    pet = Pet("Mochi", "dog", 3)
+    t = Task("Walk", TaskType.WALK, datetime(2026, 1, 1, 8), 30, recurrence=Recurrence.DAILY)
+    pet.add_task(t)
+    now = datetime(2026, 1, 5, 12)
+    nxt = t.mark_complete(now=now)
+    assert nxt.due_time == datetime(2026, 1, 6, 8)
+
+
+def test_weekly_next_occurrence_is_one_week_later():
+    pet = Pet("Mochi", "dog", 3)
+    t = Task("Bath", TaskType.GROOMING, datetime(2026, 1, 1, 8), 30, recurrence=Recurrence.WEEKLY)
+    pet.add_task(t)
+    assert t.mark_complete(now=datetime(2026, 1, 1, 9)).due_time == datetime(2026, 1, 8, 8)
